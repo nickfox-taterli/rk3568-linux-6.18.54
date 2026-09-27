@@ -100,6 +100,9 @@ struct rockchip_pm_domain {
 	struct clk_bulk_data *clks;
 	struct device_node *node;
 	struct regulator *supply;
+	bool has_domain_supply;
+	bool qos_ready;
+	bool qos_saved;
 };
 
 struct rockchip_pmu {
@@ -421,6 +424,25 @@ static int rockchip_pmu_set_idle_request(struct rockchip_pm_domain *pd,
 	return 0;
 }
 
+int rockchip_pmu_idle_request(struct device *dev, bool idle)
+{
+	struct generic_pm_domain *genpd;
+	struct rockchip_pm_domain *pd;
+	int ret;
+
+	if (!dev || !dev->pm_domain)
+		return -EINVAL;
+
+	genpd = pd_to_genpd(dev->pm_domain);
+	pd = to_rockchip_pd(genpd);
+	mutex_lock(&pd->pmu->mutex);
+	ret = rockchip_pmu_set_idle_request(pd, idle);
+	mutex_unlock(&pd->pmu->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rockchip_pmu_idle_request);
+
 static int rockchip_pmu_save_qos(struct rockchip_pm_domain *pd)
 {
 	int i;
@@ -469,6 +491,36 @@ static int rockchip_pmu_restore_qos(struct rockchip_pm_domain *pd)
 
 	return 0;
 }
+
+int rockchip_save_qos(struct device *dev)
+{
+	struct rockchip_pm_domain *pd;
+	int ret;
+
+	if (!dev || !dev->pm_domain)
+		return -EINVAL;
+	pd = to_rockchip_pd(pd_to_genpd(dev->pm_domain));
+	mutex_lock(&pd->pmu->mutex);
+	ret = rockchip_pmu_save_qos(pd);
+	mutex_unlock(&pd->pmu->mutex);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rockchip_save_qos);
+
+int rockchip_restore_qos(struct device *dev)
+{
+	struct rockchip_pm_domain *pd;
+	int ret;
+
+	if (!dev || !dev->pm_domain)
+		return -EINVAL;
+	pd = to_rockchip_pd(pd_to_genpd(dev->pm_domain));
+	mutex_lock(&pd->pmu->mutex);
+	ret = rockchip_pmu_restore_qos(pd);
+	mutex_unlock(&pd->pmu->mutex);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rockchip_restore_qos);
 
 static bool rockchip_pmu_domain_is_on(struct rockchip_pm_domain *pd)
 {
@@ -631,7 +683,10 @@ static int rockchip_pd_power(struct rockchip_pm_domain *pd, bool power_on)
 	rockchip_pmu_ungate_clk(pd, true);
 
 	if (!power_on) {
-		rockchip_pmu_save_qos(pd);
+		if (!pd->has_domain_supply || pd->qos_ready) {
+			rockchip_pmu_save_qos(pd);
+			pd->qos_saved = true;
+		}
 
 		/* if powering down, idle request to NIU first */
 		ret = rockchip_pmu_set_idle_request(pd, true);
@@ -649,8 +704,12 @@ static int rockchip_pd_power(struct rockchip_pm_domain *pd, bool power_on)
 		if (ret < 0)
 			goto out;
 
-		rockchip_pmu_restore_qos(pd);
+		if (!pd->has_domain_supply || pd->qos_saved)
+			rockchip_pmu_restore_qos(pd);
+		pd->qos_ready = true;
 	}
+	if (!power_on)
+		pd->qos_ready = false;
 
 out:
 	rockchip_pmu_ungate_clk(pd, false);
@@ -668,7 +727,7 @@ static int rockchip_pd_regulator_enable(struct rockchip_pm_domain *pd)
 {
 	struct rockchip_pmu *pmu = pd->pmu;
 
-	if (!pd->info->need_regulator)
+	if (!pd->info->need_regulator && !pd->has_domain_supply)
 		return 0;
 
 	if (IS_ERR_OR_NULL(pd->supply)) {
@@ -791,6 +850,7 @@ static int rockchip_pm_add_one_domain(struct rockchip_pmu *pmu,
 	pd->info = pd_info;
 	pd->pmu = pmu;
 	pd->node = node;
+	pd->has_domain_supply = of_property_read_bool(node, "domain-supply");
 
 	pd->num_clks = of_clk_get_parent_count(node);
 	if (pd->num_clks > 0) {
@@ -868,8 +928,18 @@ static int rockchip_pm_add_one_domain(struct rockchip_pmu *pmu,
 	 * state cannot be checked, since that usually requires IP needing
 	 * (a different) power domain.
 	 */
-	if (pd->info->need_regulator)
+	if (pd->has_domain_supply) {
+		/* Wait for the regulator before accessing this domain's registers. */
+		error = rockchip_pd_regulator_enable(pd);
+		if (error)
+			goto err_unprepare_clocks;
+		error = rockchip_pd_power(pd, false);
+		rockchip_pd_regulator_disable(pd);
+		if (error)
+			goto err_unprepare_clocks;
+	} else if (pd->info->need_regulator) {
 		rockchip_pd_power(pd, false);
+	}
 
 	pd->genpd.power_off = rockchip_pd_power_off;
 	pd->genpd.power_on = rockchip_pd_power_on;

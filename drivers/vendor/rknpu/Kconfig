@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: GPL-2.0
+menu "RKNPU"
+	depends on ARCH_ROCKCHIP
+
+config ROCKCHIP_RKNPU
+	tristate "ROCKCHIP_RKNPU"
+	depends on DMABUF_HEAPS_ROCKCHIP_CMA_HEAP && IOMMU_SUPPORT
+	help
+	  rknpu module.
+
+if ROCKCHIP_RKNPU
+
+config ROCKCHIP_RKNPU_DEBUG_FS
+	bool "RKNPU debugfs"
+	depends on DEBUG_FS
+	default y
+	help
+	  Enable debugfs to debug RKNPU usage.
+
+config ROCKCHIP_RKNPU_OPP
+	bool "Mainline OPP control for RKNPU"
+	depends on PM_OPP && COMMON_CLK && REGULATOR
+	help
+	  Use the NPU SCMI clock and rknpu regulator to switch between the
+	  board's operating points through the RKNPU debugfs freq control.
+
+config ROCKCHIP_RKNPU_PROC_FS
+	bool "RKNPU procfs"
+	depends on PROC_FS
+	help
+	  Enable procfs to debug RKNPU usage.
+
+config ROCKCHIP_RKNPU_FENCE
+	bool "RKNPU fence"
+	depends on SYNC_FILE
+	help
+	  Enable fence support for RKNPU.
+
+config ROCKCHIP_RKNPU_SRAM
+	bool "RKNPU SRAM"
+	depends on NO_GKI
+	help
+	  Enable RKNPU SRAM support
+
+config ROCKCHIP_RKNPU_DRM_GEM
+	bool
+	depends on n
+
+config ROCKCHIP_RKNPU_DMA_HEAP
+	bool
+	default y
+	depends on DMABUF_HEAPS_ROCKCHIP_CMA_HEAP
+
+endif
+
+endmenu

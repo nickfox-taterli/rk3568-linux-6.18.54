@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+/* 900 MHz uses the SDK's 975 mV operating point; test separately from 600 MHz. */
+#include "rk3568-nanopi-r5c-npu.dts"
+
+&vdd_npu {
+	regulator-min-microvolt = <975000>;
+	regulator-max-microvolt = <975000>;
+};
+
+&rknpu {
+	assigned-clock-rates = <900000000>;
+};

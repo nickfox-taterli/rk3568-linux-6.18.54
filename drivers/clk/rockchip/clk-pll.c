@@ -192,7 +192,8 @@ static unsigned long rockchip_rk3036_pll_recalc_rate(struct clk_hw *hw,
 }
 
 static int rockchip_rk3036_pll_set_params(struct rockchip_clk_pll *pll,
-				const struct rockchip_pll_rate_table *rate)
+				const struct rockchip_pll_rate_table *rate,
+				bool restoring)
 {
 	const struct clk_ops *pll_mux_ops = pll->pll_mux_ops;
 	struct clk_mux *pll_mux = &pll->pll_mux;
@@ -208,6 +209,9 @@ static int rockchip_rk3036_pll_set_params(struct rockchip_clk_pll *pll,
 
 	rockchip_rk3036_pll_get_params(pll, &cur);
 	cur.rate = 0;
+	if (!strcmp(clk_hw_get_name(&pll->hw), "pll_npll"))
+		pr_info("npll: programming %lu Hz (restore=%d)\n",
+			rate->rate, restoring);
 
 	if (!(pll->flags & ROCKCHIP_PLL_FIXED_MODE)) {
 		cur_parent = pll_mux_ops->get_parent(&pll_mux->hw);
@@ -240,10 +244,13 @@ static int rockchip_rk3036_pll_set_params(struct rockchip_clk_pll *pll,
 
 	/* wait for the pll to lock */
 	ret = rockchip_rk3036_pll_wait_lock(pll);
-	if (ret) {
+	if (!strcmp(clk_hw_get_name(&pll->hw), "pll_npll"))
+		pr_info("npll: lock result %d (restore=%d)\n", ret, restoring);
+	if (ret && !restoring) {
 		pr_warn("%s: pll update unsuccessful, trying to restore old params\n",
 			__func__);
-		rockchip_rk3036_pll_set_params(pll, &cur);
+		if (rockchip_rk3036_pll_set_params(pll, &cur, true))
+			pr_err("%s: failed to restore old pll params\n", __func__);
 	}
 
 	if (rate_change_remuxed)
@@ -269,7 +276,7 @@ static int rockchip_rk3036_pll_set_rate(struct clk_hw *hw, unsigned long drate,
 		return -EINVAL;
 	}
 
-	return rockchip_rk3036_pll_set_params(pll, rate);
+	return rockchip_rk3036_pll_set_params(pll, rate, false);
 }
 
 static int rockchip_rk3036_pll_enable(struct clk_hw *hw)
@@ -342,7 +349,7 @@ static int rockchip_rk3036_pll_init(struct clk_hw *hw)
 
 		pr_debug("%s: pll %s: rate params do not match rate table, adjusting\n",
 			 __func__, __clk_get_name(hw->clk));
-		rockchip_rk3036_pll_set_params(pll, rate);
+		rockchip_rk3036_pll_set_params(pll, rate, false);
 	}
 
 	return 0;

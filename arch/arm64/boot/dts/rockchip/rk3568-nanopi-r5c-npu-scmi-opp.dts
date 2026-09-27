@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+/* Start at the proven 600 MHz point; switch OPP through the SCMI NPU clock. */
+#include "rk3568-nanopi-r5c-npu.dts"
+
+/ {
+	otp: otp@fe38c000 {
+		compatible = "rockchip,rk3568-otp";
+		reg = <0x0 0xfe38c000 0x0 0x4000>;
+		clocks = <&cru CLK_OTPC_NS_USR>, <&cru CLK_OTPC_NS_SBPI>,
+			 <&cru PCLK_OTPC_NS>, <&cru PCLK_OTPPHY>;
+		clock-names = "usr", "sbpi", "apb", "phy";
+		resets = <&cru SRST_OTPPHY>;
+		reset-names = "otp_phy";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		npu_grade: specification-serial-number@7 {
+			reg = <0x7 0x1>;
+			bits = <0 5>;
+		};
+
+		npu_grade_remark: remark-spec-serial-number@56 {
+			reg = <0x56 0x1>;
+			bits = <0 5>;
+		};
+	};
+
+	npu_opp_table: npu-opp-table {
+		compatible = "operating-points-v2";
+
+		opp-600000000 {
+			opp-hz = /bits/ 64 <600000000>;
+			opp-microvolt = <900000>;
+		};
+
+		opp-800000000 {
+			opp-hz = /bits/ 64 <800000000>;
+			opp-microvolt = <950000>;
+		};
+
+		opp-900000000 {
+			opp-hz = /bits/ 64 <900000000>;
+			opp-microvolt = <975000>;
+		};
+	};
+};
+
+&vdd_npu {
+	regulator-min-microvolt = <900000>;
+	regulator-max-microvolt = <975000>;
+};
+
+&rknpu {
+	operating-points-v2 = <&npu_opp_table>;
+	nvmem-cells = <&npu_grade>, <&npu_grade_remark>;
+	nvmem-cell-names = "npu-grade", "npu-grade-remark";
+};

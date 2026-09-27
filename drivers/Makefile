@@ -77,6 +77,7 @@ obj-y				+= base/ block/ misc/ mfd/ nfc/
 obj-$(CONFIG_LIBNVDIMM)		+= nvdimm/
 obj-y				+= dax/
 obj-$(CONFIG_DMA_SHARED_BUFFER) += dma-buf/
+obj-y += vendor/
 obj-$(CONFIG_NUBUS)		+= nubus/
 obj-y				+= cxl/
 obj-y				+= macintosh/

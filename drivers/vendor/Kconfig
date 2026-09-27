@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
+
+menu "Rockchip vendor compatibility drivers"
+
+source "drivers/vendor/dma_heap/Kconfig"
+source "drivers/vendor/rknpu/Kconfig"
+source "drivers/vendor/mpp/Kconfig"
+
+endmenu

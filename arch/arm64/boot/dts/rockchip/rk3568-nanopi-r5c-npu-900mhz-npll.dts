@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+/* Mainline leaves NPLL in bypass; use 1.8 GHz / 2 for the 900 MHz NPU OPP. */
+#include "rk3568-nanopi-r5c-npu-900mhz.dts"
+
+&rknpu {
+	assigned-clocks = <&cru PLL_NPLL>, <&cru CLK_NPU_SRC>, <&cru CLK_NPU>;
+	assigned-clock-parents = <0>, <&cru PLL_NPLL>, <0>;
+	assigned-clock-rates = <1800000000>, <900000000>, <900000000>;
+};

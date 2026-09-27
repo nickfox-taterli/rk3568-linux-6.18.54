@@ -481,6 +481,16 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
+			/* NPU power domain is grouped by VD_NPU. */
+			pd_npu: power-domain@RK3568_PD_NPU {
+				reg = <RK3568_PD_NPU>;
+				clocks = <&cru ACLK_NPU_PRE>,
+					 <&cru HCLK_NPU_PRE>,
+					 <&cru PCLK_NPU_PRE>;
+				pm_qos = <&qos_npu>;
+				#power-domain-cells = <0>;
+			};
+
 			/* These power domains are grouped by VD_GPU */
 			power-domain@RK3568_PD_GPU {
 				reg = <RK3568_PD_GPU>;
@@ -548,6 +558,32 @@
 				#power-domain-cells = <0>;
 			};
 		};
+	};
+
+	rknpu: npu@fde40000 {
+		compatible = "rockchip,rk3568-rknpu", "rockchip,rknpu";
+		reg = <0x0 0xfde40000 0x0 0x10000>;
+		interrupts = <GIC_SPI 151 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&scmi_clk 2>, <&cru CLK_NPU>,
+			 <&cru ACLK_NPU>, <&cru HCLK_NPU>;
+		clock-names = "scmi_clk", "clk", "aclk", "hclk";
+		resets = <&cru SRST_A_NPU>, <&cru SRST_H_NPU>;
+		reset-names = "srst_a", "srst_h";
+		power-domains = <&power RK3568_PD_NPU>;
+		iommus = <&rknpu_mmu>;
+		status = "disabled";
+	};
+
+	rknpu_mmu: iommu@fde4b000 {
+		compatible = "rockchip,rk3568-iommu-v1", "rockchip,rk3568-iommu";
+		reg = <0x0 0xfde4b000 0x0 0x40>;
+		interrupts = <GIC_SPI 151 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "rknpu_mmu";
+		clocks = <&cru ACLK_NPU>, <&cru HCLK_NPU>;
+		clock-names = "aclk", "iface";
+		power-domains = <&power RK3568_PD_NPU>;
+		#iommu-cells = <0>;
+		status = "disabled";
 	};
 
 	gpu: gpu@fde60000 {

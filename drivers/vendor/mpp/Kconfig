@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config ROCKCHIP_VENDOR_MPP
+	tristate "Rockchip SDK MPP video decoder compatibility (experimental)"
+	depends on ARCH_ROCKCHIP && ROCKCHIP_IOMMU && DMA_SHARED_BUFFER
+	depends on VIDEO_HANTRO_ROCKCHIP = n && VIDEO_ROCKCHIP_VDEC = n
+	help
+	  Isolated SDK MPP service for the RK3568 RKVDEC2 H.265 decoder.
+	  Do not enable the mainline Rockchip codec drivers in this image.
+	  The test device tree also disables their VPU/VEPU hardware nodes.
+
+config ROCKCHIP_MPP_RKVDEC2
+	bool "RK3568 RKVDEC2 decoder"
+	depends on ROCKCHIP_VENDOR_MPP
+	default y

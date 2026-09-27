@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+#include "rk3568-nanopi-r5c.dts"
+
+&pd_npu {
+	domain-supply = <&vdd_npu>;
+};
+
+/* No NPU OPP table is available in this fixed-clock test configuration. */
+&vdd_npu {
+	/* Match the BSP RK3568 board policy while NPU DVFS is unavailable. */
+	regulator-always-on;
+	regulator-boot-on;
+	regulator-min-microvolt = <900000>;
+	regulator-max-microvolt = <900000>;
+};
+
+&rknpu {
+	assigned-clocks = <&cru CLK_NPU>;
+	assigned-clock-rates = <600000000>;
+	rknpu-supply = <&vdd_npu>;
+	status = "okay";
+};
+
+&rknpu_mmu {
+	status = "okay";
+};

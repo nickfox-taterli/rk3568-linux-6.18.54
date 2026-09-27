@@ -45,6 +45,7 @@
 #include <asm/sections.h>
 #include <asm/setup.h>
 #include <linux/sizes.h>
+#include <linux/rk-dma-heap.h>
 #include <asm/tlb.h>
 #include <asm/alternative.h>
 #include <asm/xen/swiotlb-xen.h>
@@ -325,6 +326,8 @@ void __init bootmem_init(void)
 	 * Reserve the CMA area after arm64_dma_phys_limit was initialised.
 	 */
 	dma_contiguous_reserve(arm64_dma_phys_limit);
+	if (IS_ENABLED(CONFIG_DMABUF_HEAPS_ROCKCHIP))
+		rk_dma_heap_cma_setup();
 
 	/*
 	 * request_standard_resources() depends on crashkernel's memory being
