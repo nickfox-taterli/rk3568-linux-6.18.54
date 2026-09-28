@@ -30,6 +30,7 @@ struct system_heap_buffer {
 	struct mutex lock;
 	unsigned long len;
 	struct sg_table sg_table;
+	bool uncached;
 	int vmap_cnt;
 	void *vaddr;
 };
@@ -148,6 +149,9 @@ static int system_heap_dma_buf_begin_cpu_access(struct dma_buf *dmabuf,
 	struct system_heap_buffer *buffer = dmabuf->priv;
 	struct dma_heap_attachment *a;
 
+	if (buffer->uncached)
+		return 0;
+
 	mutex_lock(&buffer->lock);
 
 	if (buffer->vmap_cnt)
@@ -168,6 +172,9 @@ static int system_heap_dma_buf_end_cpu_access(struct dma_buf *dmabuf,
 {
 	struct system_heap_buffer *buffer = dmabuf->priv;
 	struct dma_heap_attachment *a;
+
+	if (buffer->uncached)
+		return 0;
 
 	mutex_lock(&buffer->lock);
 
@@ -191,6 +198,9 @@ static int system_heap_mmap(struct dma_buf *dmabuf, struct vm_area_struct *vma)
 	unsigned long addr = vma->vm_start;
 	struct sg_page_iter piter;
 	int ret;
+
+	if (buffer->uncached)
+		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 
 	for_each_sgtable_page(table, &piter, vma->vm_pgoff) {
 		struct page *page = sg_page_iter_page(&piter);
@@ -223,7 +233,8 @@ static void *system_heap_do_vmap(struct system_heap_buffer *buffer)
 		*tmp++ = sg_page_iter_page(&piter);
 	}
 
-	vaddr = vmap(pages, npages, VM_MAP, PAGE_KERNEL);
+	vaddr = vmap(pages, npages, VM_MAP,
+		     buffer->uncached ? pgprot_writecombine(PAGE_KERNEL) : PAGE_KERNEL);
 	vfree(pages);
 
 	if (!vaddr)
@@ -381,6 +392,15 @@ static struct dma_buf *system_heap_allocate(struct dma_heap *heap,
 		list_del(&page->lru);
 	}
 
+	buffer->uncached = dma_heap_get_drvdata(heap) != NULL;
+	if (buffer->uncached) {
+		/* Flush the cached zeroing before exposing a write-combined mapping. */
+		ret = dma_map_sgtable(dma_heap_get_dev(heap), table, DMA_BIDIRECTIONAL, 0);
+		if (ret)
+			goto free_pages;
+		dma_unmap_sgtable(dma_heap_get_dev(heap), table, DMA_BIDIRECTIONAL, 0);
+	}
+
 	/* create the dmabuf */
 	exp_info.exp_name = dma_heap_get_name(heap);
 	exp_info.ops = &system_heap_buf_ops;
@@ -415,17 +435,23 @@ static const struct dma_heap_ops system_heap_ops = {
 
 static int __init system_heap_create(void)
 {
-	struct dma_heap_export_info exp_info;
-	struct dma_heap *sys_heap;
+	static const char * const names[] = {
+		"system", "system-dma32", "system-uncached", "system-uncached-dma32",
+	};
+	struct dma_heap_export_info exp_info = { .ops = &system_heap_ops };
+	struct dma_heap *heap;
+	int i, ret;
 
-	exp_info.name = "system";
-	exp_info.ops = &system_heap_ops;
-	exp_info.priv = NULL;
-
-	sys_heap = dma_heap_add(&exp_info);
-	if (IS_ERR(sys_heap))
-		return PTR_ERR(sys_heap);
-
+	for (i = 0; i < ARRAY_SIZE(names); i++) {
+		exp_info.name = names[i];
+		exp_info.priv = i >= 2 ? (void *)1 : NULL;
+		heap = dma_heap_add(&exp_info);
+		if (IS_ERR(heap))
+			return PTR_ERR(heap);
+		ret = dma_coerce_mask_and_coherent(dma_heap_get_dev(heap), DMA_BIT_MASK(32));
+		if (ret)
+			return ret;
+	}
 	return 0;
 }
 module_init(system_heap_create);

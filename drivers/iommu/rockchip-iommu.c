@@ -1037,6 +1037,18 @@ void rockchip_iommu_mask_irq(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(rockchip_iommu_mask_irq);
 
+void rockchip_iommu_unmask_irq(struct device *dev)
+{
+	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
+	int i;
+
+	if (!iommu)
+		return;
+	for (i = 0; i < iommu->num_mmu; i++)
+		rk_iommu_write(iommu->bases[i], RK_MMU_INT_MASK, RK_MMU_IRQ_MASK);
+}
+EXPORT_SYMBOL_GPL(rockchip_iommu_unmask_irq);
+
 static int rk_iommu_identity_attach(struct iommu_domain *identity_domain,
 				    struct device *dev)
 {

@@ -143,9 +143,7 @@ static int rga_s_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_ROTATE:
 		ctx->rotate = ctrl->val;
 		break;
-	case V4L2_CID_BG_COLOR:
-		ctx->fill_color = ctrl->val;
-		break;
+
 	}
 	spin_unlock_irqrestore(&ctx->rga->ctrl_lock, flags);
 	return 0;
@@ -159,7 +157,7 @@ static int rga_setup_ctrls(struct rga_ctx *ctx)
 {
 	struct rockchip_rga *rga = ctx->rga;
 
-	v4l2_ctrl_handler_init(&ctx->ctrl_handler, 4);
+	v4l2_ctrl_handler_init(&ctx->ctrl_handler, 3);
 
 	v4l2_ctrl_new_std(&ctx->ctrl_handler, &rga_ctrl_ops,
 			  V4L2_CID_HFLIP, 0, 1, 1, 0);
@@ -170,8 +168,6 @@ static int rga_setup_ctrls(struct rga_ctx *ctx)
 	v4l2_ctrl_new_std(&ctx->ctrl_handler, &rga_ctrl_ops,
 			  V4L2_CID_ROTATE, 0, 270, 90, 0);
 
-	v4l2_ctrl_new_std(&ctx->ctrl_handler, &rga_ctrl_ops,
-			  V4L2_CID_BG_COLOR, 0, 0xffffffff, 1, 0);
 
 	if (ctx->ctrl_handler.error) {
 		int err = ctx->ctrl_handler.error;
@@ -473,7 +469,7 @@ static int vidioc_g_fmt(struct file *file, void *priv, struct v4l2_format *f)
 	if (IS_ERR(frm))
 		return PTR_ERR(frm);
 
-	v4l2_fill_pixfmt_mp(pix_fmt, frm->fmt->fourcc, frm->width, frm->height);
+	*pix_fmt = frm->pix;
 
 	pix_fmt->field = V4L2_FIELD_NONE;
 	pix_fmt->colorspace = frm->colorspace;
@@ -485,18 +481,53 @@ static int vidioc_try_fmt(struct file *file, void *priv, struct v4l2_format *f)
 {
 	struct v4l2_pix_format_mplane *pix_fmt = &f->fmt.pix_mp;
 	struct rga_fmt *fmt;
+	const struct v4l2_format_info *info;
+	u32 requested_stride = pix_fmt->plane_fmt[0].bytesperline;
+	u32 stride, virtual_width, active_width;
+	int ret;
 
 	fmt = rga_fmt_find(pix_fmt->pixelformat);
 	if (!fmt)
 		fmt = &formats[0];
+	info = v4l2_format_info(fmt->fourcc);
+	if (!info)
+		return -EINVAL;
 
 	pix_fmt->width = clamp(pix_fmt->width,
 			       (u32)MIN_WIDTH, (u32)MAX_WIDTH);
 	pix_fmt->height = clamp(pix_fmt->height,
 				(u32)MIN_HEIGHT, (u32)MAX_HEIGHT);
+	pix_fmt->width = round_up(pix_fmt->width, info->hdiv);
+	pix_fmt->height = round_up(pix_fmt->height, info->vdiv);
 
-	v4l2_fill_pixfmt_mp(pix_fmt, fmt->fourcc, pix_fmt->width, pix_fmt->height);
+	/* Every component stride must be representable in four-byte words. */
+	requested_stride = min(requested_stride,
+			       (u32)(MAX_WIDTH * info->bpp[0]));
+	stride = roundup(max(requested_stride,
+			     pix_fmt->width * info->bpp[0]),
+			 4 * info->hdiv * info->bpp[0]);
+	stride = min(stride, (u32)(MAX_WIDTH * info->bpp[0]));
+	active_width = pix_fmt->width;
+	virtual_width = stride / info->bpp[0];
+	ret = v4l2_fill_pixfmt_mp(pix_fmt, fmt->fourcc,
+				virtual_width, pix_fmt->height);
+	if (ret)
+		return ret;
+	/* Plane sizes retain the padded stride. */
+	pix_fmt->width = active_width;
 	pix_fmt->field = V4L2_FIELD_NONE;
+	if (pix_fmt->quantization == V4L2_QUANTIZATION_DEFAULT)
+		pix_fmt->quantization = V4L2_MAP_QUANTIZATION_DEFAULT(
+			info->pixel_enc == V4L2_PIXEL_ENC_RGB,
+			pix_fmt->colorspace, pix_fmt->ycbcr_enc);
+	if (pix_fmt->quantization != V4L2_QUANTIZATION_FULL_RANGE &&
+	    pix_fmt->quantization != V4L2_QUANTIZATION_LIM_RANGE)
+		return -EINVAL;
+	/* This RGA generation has no BT.709 full-range CSC selector. */
+	if (info->pixel_enc == V4L2_PIXEL_ENC_YUV &&
+	    pix_fmt->colorspace == V4L2_COLORSPACE_REC709 &&
+	    pix_fmt->quantization == V4L2_QUANTIZATION_FULL_RANGE)
+		return -EINVAL;
 
 	return 0;
 }
@@ -533,6 +564,7 @@ static int vidioc_s_fmt(struct file *file, void *priv, struct v4l2_format *f)
 	frm->fmt = rga_fmt_find(pix_fmt->pixelformat);
 	frm->stride = pix_fmt->plane_fmt[0].bytesperline;
 	frm->colorspace = pix_fmt->colorspace;
+	frm->quantization = pix_fmt->quantization;
 
 	/* Reset crop settings */
 	frm->crop.left = 0;

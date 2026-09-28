@@ -393,7 +393,8 @@ static int rkvdec2_link_finish(struct mpp_dev *mpp, struct mpp_task *mpp_task)
 	struct rkvdec2_dev *dec = to_rkvdec2_dev(mpp);
 	struct rkvdec2_task *task = to_rkvdec2_task(mpp_task);
 	struct rkvdec_link_dev *link_dec = dec->link_dec;
-	struct mpp_dma_buffer *table = link_dec->table;
+	/* Read back this task, never the first node (which may be a hack). */
+	struct mpp_dma_buffer *table = task->table;
 	struct rkvdec_link_info *info = link_dec->info;
 	struct rkvdec_link_part *part = info->part_r;
 	u32 *tb_reg = (u32 *)table->vaddr;
@@ -653,6 +654,13 @@ int rkvdec2_link_init(struct platform_device *pdev, struct rkvdec2_dev *dec)
 	if (!link_dec->reg_base) {
 		dev_err(dev, "ioremap failed for resource %pR\n", res);
 		ret = -ENOMEM;
+		goto done;
+	}
+
+	/* RK3568 H.264 needs a workaround node plus the real task. */
+	if (mpp->task_capacity < 2) {
+		dev_err(dev, "link mode requires at least two task slots\n");
+		ret = -EINVAL;
 		goto done;
 	}
 
@@ -1041,7 +1049,7 @@ static int mpp_task_queue(struct mpp_dev *mpp, struct mpp_task *mpp_task)
 					rkvdec2_link_timeout_proc);
 
 		tb_reg = (u32 *)table->vaddr;
-		memset(tb_reg + info->part_r[0].tb_reg_off, 0, info->part_r[0].reg_num);
+		memset(tb_reg + info->part_r[0].tb_reg_off, 0, info->part_r[0].reg_num * sizeof(*tb_reg));
 		rkvdec2_3568_hack_fix_link(tb_reg + 4);
 		list_move_tail(&table->link, &link_dec->used_list);
 		hack_task->table = table;

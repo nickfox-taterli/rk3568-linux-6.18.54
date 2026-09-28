@@ -13,6 +13,7 @@ int rockchip_iommu_disable(struct device *dev);
 int rockchip_iommu_enable(struct device *dev);
 int rockchip_iommu_force_reset(struct device *dev);
 void rockchip_iommu_mask_irq(struct device *dev);
+void rockchip_iommu_unmask_irq(struct device *dev);
 #else
 static inline bool rockchip_iommu_is_enabled(struct device *dev)
 {

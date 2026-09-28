@@ -36,6 +36,7 @@
  */
 struct dma_heap {
 	const char *name;
+	struct device *dev;
 	const struct dma_heap_ops *ops;
 	void *priv;
 	dev_t heap_devt;
@@ -218,6 +219,13 @@ const char *dma_heap_get_name(struct dma_heap *heap)
 }
 EXPORT_SYMBOL_NS_GPL(dma_heap_get_name, "DMA_BUF_HEAP");
 
+/* Heap exporters use this device to clean freshly allocated uncached pages. */
+struct device *dma_heap_get_dev(struct dma_heap *heap)
+{
+	return heap->dev;
+}
+EXPORT_SYMBOL_NS_GPL(dma_heap_get_dev, "DMA_BUF_HEAP");
+
 /**
  * dma_heap_add - adds a heap to dmabuf heaps
  * @exp_info: information needed to register this heap
@@ -277,6 +285,7 @@ struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info)
 		err_ret = ERR_CAST(dev_ret);
 		goto err2;
 	}
+	heap->dev = dev_ret;
 
 	mutex_lock(&heap_list_lock);
 	/* check the name is unique */

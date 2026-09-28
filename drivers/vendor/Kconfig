@@ -6,4 +6,6 @@ source "drivers/vendor/dma_heap/Kconfig"
 source "drivers/vendor/rknpu/Kconfig"
 source "drivers/vendor/mpp/Kconfig"
 
+source "drivers/vendor/rga/Kconfig"
+
 endmenu

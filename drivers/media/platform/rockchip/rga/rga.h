@@ -28,6 +28,7 @@ struct rga_frame {
 	u32 width;
 	u32 height;
 	u32 colorspace;
+	u32 quantization;
 
 	/* Crop */
 	struct v4l2_rect crop;
@@ -65,7 +66,6 @@ struct rga_ctx {
 	u32 hflip;
 	u32 vflip;
 	u32 rotate;
-	u32 fill_color;
 };
 
 static inline struct rga_ctx *file_to_rga_ctx(struct file *filp)

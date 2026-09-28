@@ -53,7 +53,8 @@ rga_get_addr_offset(struct rga_frame *frm, struct rga_addr_offset *offset,
 	x_div = frm->fmt->x_div;
 	y_div = frm->fmt->y_div;
 	uv_stride = frm->stride / x_div;
-	pixel_width = frm->stride / frm->width;
+	pixel_width = RGA_COLOR_FMT_IS_RGB(frm->fmt->hw_format) ?
+		      frm->fmt->depth / 8 : 1;
 
 	lt->y_off = offset->y_off + y * frm->stride + x * pixel_width;
 	lt->u_off = offset->u_off + (y / y_div) * uv_stride + x / x_div;
@@ -196,7 +197,9 @@ static void rga_cmd_set_trans_info(struct rga_ctx *ctx)
 			src_info.data.csc_mode = RGA_SRC_CSC_MODE_BT709_R0;
 			break;
 		default:
-			src_info.data.csc_mode = RGA_SRC_CSC_MODE_BT601_R0;
+			src_info.data.csc_mode =
+				ctx->in.quantization == V4L2_QUANTIZATION_FULL_RANGE ?
+				RGA_SRC_CSC_MODE_BT601_R1 : RGA_SRC_CSC_MODE_BT601_R0;
 			break;
 		}
 	}
@@ -205,18 +208,20 @@ static void rga_cmd_set_trans_info(struct rga_ctx *ctx)
 	    RGA_COLOR_FMT_IS_YUV(ctx->out.fmt->hw_format)) {
 		switch (ctx->out.colorspace) {
 		case V4L2_COLORSPACE_REC709:
-			dst_info.data.csc_mode = RGA_SRC_CSC_MODE_BT709_R0;
+			dst_info.data.csc_mode = RGA_DST_CSC_MODE_BT709_R0;
 			break;
 		default:
-			dst_info.data.csc_mode = RGA_DST_CSC_MODE_BT601_R0;
+			dst_info.data.csc_mode =
+				ctx->out.quantization == V4L2_QUANTIZATION_FULL_RANGE ?
+				RGA_DST_CSC_MODE_BT601_R0 : RGA_DST_CSC_MODE_BT601_R1;
 			break;
 		}
 	}
 
-	if (ctx->vflip)
+	if (ctx->hflip)
 		src_info.data.mir_mode |= RGA_SRC_MIRR_MODE_X;
 
-	if (ctx->hflip)
+	if (ctx->vflip)
 		src_info.data.mir_mode |= RGA_SRC_MIRR_MODE_Y;
 
 	switch (ctx->rotate) {
@@ -352,9 +357,9 @@ static void rga_cmd_set_dst_info(struct rga_ctx *ctx,
 	dst_x = ctx->out.crop.left;
 	dst_y = ctx->out.crop.top;
 
-	if (ctx->vflip)
-		mir_mode |= RGA_SRC_MIRR_MODE_X;
 	if (ctx->hflip)
+		mir_mode |= RGA_SRC_MIRR_MODE_X;
+	if (ctx->vflip)
 		mir_mode |= RGA_SRC_MIRR_MODE_Y;
 
 	switch (ctx->rotate) {

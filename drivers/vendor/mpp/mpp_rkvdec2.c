@@ -665,7 +665,7 @@ static int rkvdec2_procfs_init(struct mpp_dev *mpp)
 		return -EINVAL;
 
 	snprintf(name, sizeof(name) - 1, "%s%d",
-		 mpp->dev->of_node->name, mpp->core_id);
+		 dev_name(mpp->dev), mpp->core_id);
 	dec->procfs = proc_mkdir(name, mpp->srv->procfs);
 	if (IS_ERR_OR_NULL(dec->procfs)) {
 		mpp_err("failed on open procfs\n");
@@ -1625,7 +1625,8 @@ static int rkvdec2_probe_default(struct platform_device *pdev)
 	}
 
 	rkvdec2_alloc_rcbbuf(pdev, dec);
-	rkvdec2_link_init(pdev, dec);
+	if (!device_property_read_bool(dev, "rockchip,disable-link-mode"))
+		rkvdec2_link_init(pdev, dec);
 
 	if (dec->link_dec) {
 		ret = devm_request_threaded_irq(dev, mpp->irq,

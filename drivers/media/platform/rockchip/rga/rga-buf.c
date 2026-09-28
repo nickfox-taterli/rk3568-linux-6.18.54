@@ -26,9 +26,11 @@ static ssize_t fill_descriptors(struct rga_dma_desc *desc, size_t max_desc,
 	dma_addr_t addr;
 
 	for_each_sgtable_dma_page(sgt, &iter, 0) {
-		if (n_desc > max_desc)
-			return -EINVAL;
+		if (n_desc >= max_desc)
+			break;
 		addr = sg_page_iter_dma_address(&iter);
+		if (upper_32_bits(addr))
+			return -ERANGE;
 		tmp->addr = lower_32_bits(addr);
 		tmp++;
 		n_desc++;
@@ -79,11 +81,14 @@ static int rga_buf_init(struct vb2_buffer *vb)
 	struct rockchip_rga *rga = ctx->rga;
 	struct rga_frame *f = rga_get_frame(ctx, vb->vb2_queue->type);
 	size_t n_desc = 0;
+	int i;
 
 	if (IS_ERR(f))
 		return PTR_ERR(f);
 
-	n_desc = DIV_ROUND_UP(f->size, PAGE_SIZE);
+	/* Each memory plane starts on a separate MMU page boundary. */
+	for (i = 0; i < f->pix.num_planes; i++)
+		n_desc += DIV_ROUND_UP(f->pix.plane_fmt[i].sizeimage, PAGE_SIZE);
 
 	rbuf->n_desc = n_desc;
 	rbuf->dma_desc = dma_alloc_coherent(rga->dev,
@@ -100,9 +105,9 @@ static int get_plane_offset(struct rga_frame *f, int plane)
 	if (plane == 0)
 		return 0;
 	if (plane == 1)
-		return f->width * f->height;
+		return f->stride * f->height;
 	if (plane == 2)
-		return f->width * f->height + (f->width * f->height / f->fmt->uv_factor);
+		return f->stride * f->height + (f->stride * f->height / f->fmt->uv_factor);
 
 	return -EINVAL;
 }
@@ -117,7 +122,7 @@ static int rga_buf_prepare(struct vb2_buffer *vb)
 	size_t curr_desc = 0;
 	int i;
 	const struct v4l2_format_info *info;
-	unsigned int offsets[VIDEO_MAX_PLANES];
+	unsigned int offsets[VIDEO_MAX_PLANES] = {};
 
 	if (IS_ERR(f))
 		return PTR_ERR(f);
@@ -134,12 +139,13 @@ static int rga_buf_prepare(struct vb2_buffer *vb)
 
 		/* Create local MMU table for RGA */
 		n_desc = fill_descriptors(&rbuf->dma_desc[curr_desc],
-					  rbuf->n_desc - curr_desc,
+					  DIV_ROUND_UP(f->pix.plane_fmt[i].sizeimage, PAGE_SIZE),
 					  vb2_dma_sg_plane_desc(vb, i));
-		if (n_desc < 0) {
+		if (n_desc < 0 || n_desc != DIV_ROUND_UP(
+				f->pix.plane_fmt[i].sizeimage, PAGE_SIZE)) {
 			v4l2_err(&ctx->rga->v4l2_dev,
 				 "Failed to map video buffer to RGA\n");
-			return n_desc;
+			return n_desc < 0 ? n_desc : -EINVAL;
 		}
 		offsets[i] = curr_desc << PAGE_SHIFT;
 		curr_desc += n_desc;
