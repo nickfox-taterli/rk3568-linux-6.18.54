@@ -20,6 +20,7 @@
 #include <linux/of_irq.h>
 #include <linux/phy/phy.h>
 #include <linux/platform_device.h>
+#include <linux/suspend.h>
 #include <linux/regmap.h>
 #include <linux/reset.h>
 
@@ -99,6 +100,8 @@ struct rockchip_pcie {
 	struct irq_domain *irq_domain;
 	const struct rockchip_pcie_of_data *data;
 	bool supports_clkreq;
+	bool pm_link_was_up;
+	u32 pm_legacy_irq_mask;
 };
 
 struct rockchip_pcie_of_data {
@@ -317,9 +320,11 @@ static int rockchip_pcie_host_init(struct dw_pcie_rp *pp)
 
 	pci->dbi_base2 = pci->dbi_base + PCIE_TYPE0_HDR_DBI2_OFFSET;
 
-	ret = rockchip_pcie_init_irq_domain(rockchip);
-	if (ret < 0)
-		dev_err(dev, "failed to init irq domain\n");
+	if (!rockchip->irq_domain) {
+		ret = rockchip_pcie_init_irq_domain(rockchip);
+		if (ret < 0)
+			return dev_err_probe(dev, ret, "failed to init irq domain\n");
+	}
 
 	irq_set_chained_handler_and_data(irq, rockchip_pcie_intx_handler,
 					 rockchip);
@@ -720,6 +725,84 @@ disable_regulator:
 	return ret;
 }
 
+/* Restore RC/PHY before the child PCI bridge resumes config-space MMIO.
+ * The firmware may discard the center-domain state during PSCI deep sleep.
+ * s2idle keeps the controller running and follows its existing PM path.
+ */
+static int rockchip_pcie_suspend_noirq(struct device *dev)
+{
+	struct rockchip_pcie *rockchip = dev_get_drvdata(dev);
+	struct dw_pcie *pci = &rockchip->pci;
+	int ret;
+
+	if (pm_suspend_target_state == PM_SUSPEND_TO_IDLE)
+		return 0;
+	if (rockchip->data->mode != DW_PCIE_RC_TYPE)
+		return -EOPNOTSUPP;
+	rockchip->pm_link_was_up = dw_pcie_link_up(pci);
+	ret = dw_pcie_suspend_noirq(pci);
+	if (ret)
+		return ret;
+	/* Do not power down an active L1 link that the helper left running. */
+	if (!pci->suspended)
+		return -EBUSY;
+	rockchip->pm_legacy_irq_mask =
+		rockchip_pcie_readl_apb(rockchip, PCIE_CLIENT_INTR_MASK_LEGACY);
+	gpiod_set_value_cansleep(rockchip->rst_gpio, 0);
+	rockchip_pcie_phy_deinit(rockchip);
+	clk_bulk_disable_unprepare(rockchip->clk_cnt, rockchip->clks);
+	reset_control_assert(rockchip->rst);
+	return 0;
+}
+static int rockchip_pcie_resume_noirq(struct device *dev)
+{
+	struct rockchip_pcie *rockchip = dev_get_drvdata(dev);
+	struct dw_pcie *pci = &rockchip->pci;
+	int ret;
+
+	if (!pci->suspended)
+		return 0;
+	ret = phy_init(rockchip->phy);
+	if (ret)
+		return ret;
+	ret = phy_power_on(rockchip->phy);
+	if (ret)
+		goto exit_phy;
+	ret = reset_control_deassert(rockchip->rst);
+	if (ret)
+		goto power_off_phy;
+	ret = clk_bulk_prepare_enable(rockchip->clk_cnt, rockchip->clks);
+	if (ret)
+		goto power_off_phy;
+	rockchip_pcie_writel_apb(rockchip,
+		FIELD_PREP_WM16(PCIE_LTSSM_ENABLE_ENHANCE, 1), PCIE_CLIENT_HOT_RESET_CTRL);
+	rockchip_pcie_writel_apb(rockchip,
+		PCIE_CLIENT_SET_MODE(PCIE_CLIENT_MODE_RC), PCIE_CLIENT_GENERAL_CON);
+	rockchip_pcie_writel_apb(rockchip,
+		GENMASK(31, 16) | (rockchip->pm_legacy_irq_mask & GENMASK(15, 0)),
+		PCIE_CLIENT_INTR_MASK_LEGACY);
+	if (rockchip->pm_link_was_up) {
+		ret = dw_pcie_resume_noirq(pci);
+	} else {
+		/* Restore the empty root port without requiring a nonexistent EP. */
+		ret = rockchip_pcie_host_init(&pci->pp);
+		if (!ret) {
+			dw_pcie_setup_rc(&pci->pp);
+			ret = dw_pcie_start_link(pci);
+		}
+		pci->suspended = false;
+	}
+	return ret;
+power_off_phy:
+	phy_power_off(rockchip->phy);
+exit_phy:
+	phy_exit(rockchip->phy);
+	return ret;
+}
+static const struct dev_pm_ops rockchip_pcie_pm_ops = {
+	NOIRQ_SYSTEM_SLEEP_PM_OPS(rockchip_pcie_suspend_noirq, rockchip_pcie_resume_noirq)
+};
+
 static const struct rockchip_pcie_of_data rockchip_pcie_rc_of_data_rk3568 = {
 	.mode = DW_PCIE_RC_TYPE,
 };
@@ -755,6 +838,7 @@ static struct platform_driver rockchip_pcie_driver = {
 		.name	= "rockchip-dw-pcie",
 		.of_match_table = rockchip_pcie_of_match,
 		.suppress_bind_attrs = true,
+		.pm = pm_sleep_ptr(&rockchip_pcie_pm_ops),
 	},
 	.probe = rockchip_pcie_probe,
 };

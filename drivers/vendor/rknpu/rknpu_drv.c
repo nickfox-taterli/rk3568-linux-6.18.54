@@ -641,6 +641,11 @@ static enum hrtimer_restart hrtimer_handler(struct hrtimer *timer)
 			now = ktime_get();
 			subcore_data->timer.busy_time +=
 				ktime_sub(now, job->hw_recoder_time);
+			#ifdef CONFIG_ROCKCHIP_RKNPU_OPP
+			if (i == 0)
+				atomic64_add(ktime_to_ns(ktime_sub(now, job->hw_recoder_time)),
+					     &rknpu_dev->dvfs_busy_ns);
+#endif
 			job->hw_recoder_time = now;
 		}
 
@@ -1323,7 +1328,11 @@ static int rknpu_probe(struct platform_device *pdev)
 		goto err_remove_drv;
 
 #ifndef FPGA_PLATFORM
-	rknpu_devfreq_init(rknpu_dev);
+	ret = rknpu_devfreq_init(rknpu_dev);
+	if (ret) {
+		rknpu_power_off(rknpu_dev);
+		goto err_remove_drv;
+	}
 #endif
 
 	// set default power put delay to 3s

@@ -1129,6 +1129,11 @@ properties:
           - const: rockchip,rk3566-box-demo
           - const: rockchip,rk3566
 
+      - description: ZB02-3568 carrier with RP-RK3568-C-V11 core
+        items:
+          - const: rpdzkj,zb02-3568
+          - const: rockchip,rk3568
+
       - description: Rockchip RK3568 Evaluation board
         items:
           - const: rockchip,rk3568-evb1-v10

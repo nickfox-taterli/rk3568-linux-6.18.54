@@ -11,6 +11,7 @@
 
 #include "mpp_debug.h"
 #include "mpp_common.h"
+#include "mpp_devfreq.h"
 #include "mpp_iommu.h"
 
 #include "mpp_rkvdec2_link.h"
@@ -202,7 +203,7 @@ int mpp_set_rcbbuf(struct mpp_dev *mpp, struct mpp_session *session,
 
 	if (priv && dec->rcb_iova) {
 		int i;
-		u32 reg_idx, rcb_size, rcb_offset;
+		u32 reg_idx, rcb_size, rcb_offset, sram_offset = 0, ddr_offset = 0;
 		struct rkvdec2_rcb_info *rcb_inf = &priv->rcb_inf;
 		u32 width = priv->codec_info[DEC_INFO_WIDTH].val;
 
@@ -213,14 +214,20 @@ int mpp_set_rcbbuf(struct mpp_dev *mpp, struct mpp_session *session,
 		for (i = 0; i < rcb_inf->cnt; i++) {
 			reg_idx = rcb_inf->elem[i].index;
 			rcb_size = rcb_inf->elem[i].size;
-			if ((rcb_offset + rcb_size) > dec->rcb_size) {
+			if (reg_idx >= task->hw_info->reg_num || rcb_size > dec->rcb_size - rcb_offset) {
 				mpp_debug(DEBUG_SRAM_INFO,
 					  "rcb: reg %d use original buffer\n", reg_idx);
 				continue;
 			}
 			mpp_debug(DEBUG_SRAM_INFO, "rcb: reg %d offset %d, size %d\n",
 				  reg_idx, rcb_offset, rcb_size);
-			task->reg[reg_idx] = dec->rcb_iova + rcb_offset;
+			if (rcb_size <= dec->sram_size - sram_offset) {
+				task->reg[reg_idx] = dec->rcb_iova + sram_offset;
+				sram_offset += rcb_size;
+			} else {
+				task->reg[reg_idx] = dec->rcb_ddr_iova + ddr_offset;
+				ddr_offset += rcb_size;
+			}
 			rcb_offset += rcb_size;
 		}
 	}
@@ -954,7 +961,10 @@ void mpp_devfreq_set_core_rate(struct mpp_dev *mpp, enum MPP_CLOCK_MODE mode)
 		mutex_unlock(&dec->devfreq->lock);
 	}
 
-	mpp_clk_set_rate(&dec->core_clk_info, mode);
+	if (!mpp->mainline_dvfs)
+		mpp_clk_set_rate(&dec->core_clk_info, mode);
+	else
+		mpp_mainline_dvfs_rate(mpp, mpp_get_clk_info_rate_hz(&dec->core_clk_info, mode));
 }
 #else
 static inline int rkvdec2_devfreq_init(struct mpp_dev *mpp)
@@ -971,7 +981,10 @@ void mpp_devfreq_set_core_rate(struct mpp_dev *mpp, enum MPP_CLOCK_MODE mode)
 {
 	struct rkvdec2_dev *dec = to_rkvdec2_dev(mpp);
 
-	mpp_clk_set_rate(&dec->core_clk_info, mode);
+	if (!mpp->mainline_dvfs)
+		mpp_clk_set_rate(&dec->core_clk_info, mode);
+	else
+		mpp_mainline_dvfs_rate(mpp, mpp_get_clk_info_rate_hz(&dec->core_clk_info, mode));
 }
 #endif
 
@@ -1391,123 +1404,49 @@ static int rkvdec2_ccu_probe(struct platform_device *pdev)
 	return 0;
 }
 
+/* Mainline DMA API owns the IOVA allocation. Each RCB register has an
+ * independent base: pack complete regions into SRAM or coherent DDR instead
+ * of forcing a fixed, contiguous SRAM + DDR IOVA outside the DMA allocator. */
 static int rkvdec2_alloc_rcbbuf(struct platform_device *pdev, struct rkvdec2_dev *dec)
 {
-	int ret;
-	u32 vals[2];
-	dma_addr_t iova;
-	u32 rcb_size, sram_size;
-	struct device_node *sram_np;
-	struct resource sram_res;
-	resource_size_t sram_start, sram_end;
-	struct iommu_domain *domain;
 	struct device *dev = &pdev->dev;
+	struct device_node *np;
+	struct resource res;
+	u32 size;
+	int ret;
 
-	/* get rcb iova start and size */
-	ret = device_property_read_u32_array(dev, "rockchip,rcb-iova", vals, 2);
-	if (ret) {
-		dev_err(dev, "could not find property rcb-iova\n");
-		return ret;
-	}
-	iova = PAGE_ALIGN(vals[0]);
-	rcb_size = PAGE_ALIGN(vals[1]);
-	if (!rcb_size) {
-		dev_err(dev, "rcb_size invalid.\n");
+	if (!of_property_present(dev->of_node, "rockchip,sram"))
+		return 0;
+	ret = of_property_read_u32(dev->of_node, "rockchip,rcb-size", &size);
+	if (ret || !size || size > SZ_1M)
 		return -EINVAL;
-	}
-	/* alloc reserve iova for rcb */
-	/* Mainline has no exported IOVA reservation API for this fixed SRAM map. */
-	ret = -EOPNOTSUPP;
-	if (ret) {
-		dev_err(dev, "alloc rcb iova error.\n");
-		return ret;
-	}
-	/* get sram device node */
-	sram_np = of_parse_phandle(dev->of_node, "rockchip,sram", 0);
-	if (!sram_np) {
-		dev_err(dev, "could not find phandle sram\n");
+	np = of_parse_phandle(dev->of_node, "rockchip,sram", 0);
+	if (!np)
 		return -ENODEV;
-	}
-	/* get sram start and size */
-	ret = of_address_to_resource(sram_np, 0, &sram_res);
-	of_node_put(sram_np);
-	if (ret) {
-		dev_err(dev, "find sram res error\n");
+	ret = of_address_to_resource(np, 0, &res);
+	of_node_put(np);
+	if (ret)
 		return ret;
-	}
-	/* check sram start and size is PAGE_SIZE align */
-	sram_start = round_up(sram_res.start, PAGE_SIZE);
-	sram_end = round_down(sram_res.start + resource_size(&sram_res), PAGE_SIZE);
-	if (sram_end <= sram_start) {
-		dev_err(dev, "no available sram, phy_start %pa, phy_end %pa\n",
-			&sram_start, &sram_end);
+	if (!IS_ALIGNED(res.start, PAGE_SIZE) || !IS_ALIGNED(resource_size(&res), PAGE_SIZE))
+		return -EINVAL;
+	dec->sram_size = min_t(u32, resource_size(&res), PAGE_ALIGN(size));
+	dec->rcb_iova = dma_map_resource(dev, res.start, dec->sram_size,
+					 DMA_BIDIRECTIONAL, 0);
+	if (dma_mapping_error(dev, dec->rcb_iova)) {
+		dec->rcb_iova = 0;
 		return -ENOMEM;
 	}
-	sram_size = sram_end - sram_start;
-	sram_size = rcb_size < sram_size ? rcb_size : sram_size;
-	/* iova map to sram */
-	domain = dec->mpp.iommu_info->domain;
-	ret = iommu_map(domain, iova, sram_start, sram_size,
-			IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
-	if (ret) {
-		dev_err(dev, "sram iommu_map error.\n");
-		return ret;
+	dec->rcb_size = PAGE_ALIGN(size);
+	dec->rcb_cpu = dma_alloc_coherent(dev, dec->rcb_size, &dec->rcb_ddr_iova, GFP_KERNEL);
+	if (!dec->rcb_cpu) {
+		dma_unmap_resource(dev, dec->rcb_iova, dec->sram_size, DMA_BIDIRECTIONAL, 0);
+		dec->rcb_iova = 0;
+		return -ENOMEM;
 	}
-	/* alloc dma for the remaining buffer, sram + dma */
-	if (sram_size < rcb_size) {
-		struct page *page;
-		size_t page_size = PAGE_ALIGN(rcb_size - sram_size);
-
-		page = alloc_pages(GFP_KERNEL | __GFP_ZERO, get_order(page_size));
-		if (!page) {
-			dev_err(dev, "unable to allocate pages\n");
-			ret = -ENOMEM;
-			goto err_sram_map;
-		}
-		/* iova map to dma */
-		ret = iommu_map(domain, iova + sram_size, page_to_phys(page),
-				page_size, IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
-		if (ret) {
-			dev_err(dev, "page iommu_map error.\n");
-			__free_pages(page, get_order(page_size));
-			goto err_sram_map;
-		}
-		dec->rcb_page = page;
-	}
-	dec->sram_size = sram_size;
-	dec->rcb_size = rcb_size;
-	dec->rcb_iova = iova;
-	dev_info(dev, "sram_start %pa\n", &sram_start);
-	dev_info(dev, "rcb_iova %pad\n", &dec->rcb_iova);
-	dev_info(dev, "sram_size %u\n", dec->sram_size);
-	dev_info(dev, "rcb_size %u\n", dec->rcb_size);
-
-	ret = of_property_read_u32(dev->of_node, "rockchip,rcb-min-width", &dec->rcb_min_width);
-	if (!ret && dec->rcb_min_width)
-		dev_info(dev, "min_width %u\n", dec->rcb_min_width);
-
-	/* if have, read rcb_info */
-	dec->rcb_info_count = device_property_count_u32(dev, "rockchip,rcb-info");
-	if (dec->rcb_info_count > 0 &&
-	    dec->rcb_info_count <= (sizeof(dec->rcb_infos) / sizeof(u32))) {
-		int i;
-
-		ret = device_property_read_u32_array(dev, "rockchip,rcb-info",
-						     dec->rcb_infos, dec->rcb_info_count);
-		if (!ret) {
-			dev_info(dev, "rcb_info_count %u\n", dec->rcb_info_count);
-			for (i = 0; i < dec->rcb_info_count; i += 2)
-				dev_info(dev, "[%u, %u]\n",
-					 dec->rcb_infos[i], dec->rcb_infos[i+1]);
-		}
-	}
-
+	of_property_read_u32(dev->of_node, "rockchip,rcb-min-width", &dec->rcb_min_width);
+	dev_info(dev, "RCB DMA API: SRAM %u at %pad, DDR %u at %pad\n",
+		 dec->sram_size, &dec->rcb_iova, dec->rcb_size, &dec->rcb_ddr_iova);
 	return 0;
-
-err_sram_map:
-	iommu_unmap(domain, iova, sram_size);
-
-	return ret;
 }
 
 static int rkvdec2_core_probe(struct platform_device *pdev)
@@ -1552,7 +1491,9 @@ static int rkvdec2_core_probe(struct platform_device *pdev)
 	}
 
 	/* alloc rcb buffer */
-	rkvdec2_alloc_rcbbuf(pdev, dec);
+	ret = rkvdec2_alloc_rcbbuf(pdev, dec);
+	if (ret)
+		dev_warn(dev, "RCB unavailable: %d, using userspace buffers\n", ret);
 
 	/* set device for link */
 	ret = rkvdec2_ccu_link_init(pdev, dec);
@@ -1624,7 +1565,9 @@ static int rkvdec2_probe_default(struct platform_device *pdev)
 		return ret;
 	}
 
-	rkvdec2_alloc_rcbbuf(pdev, dec);
+	ret = rkvdec2_alloc_rcbbuf(pdev, dec);
+	if (ret)
+		dev_warn(dev, "RCB unavailable: %d, using userspace buffers\n", ret);
 	if (!device_property_read_bool(dev, "rockchip,disable-link-mode"))
 		rkvdec2_link_init(pdev, dec);
 
@@ -1678,19 +1621,14 @@ static int rkvdec2_probe(struct platform_device *pdev)
 
 static int rkvdec2_free_rcbbuf(struct platform_device *pdev, struct rkvdec2_dev *dec)
 {
-	struct iommu_domain *domain;
-
-	if (dec->rcb_page) {
-		size_t page_size = PAGE_ALIGN(dec->rcb_size - dec->sram_size);
-		int order = get_order(page_size);
-
-		__free_pages(dec->rcb_page, order);
+	if (dec->rcb_cpu) {
+		dma_free_coherent(&pdev->dev, dec->rcb_size, dec->rcb_cpu, dec->rcb_ddr_iova);
+		dec->rcb_cpu = NULL;
 	}
 	if (dec->rcb_iova) {
-		domain = dec->mpp.iommu_info->domain;
-		iommu_unmap(domain, dec->rcb_iova, dec->rcb_size);
+		dma_unmap_resource(&pdev->dev, dec->rcb_iova, dec->sram_size, DMA_BIDIRECTIONAL, 0);
+		dec->rcb_iova = 0;
 	}
-
 	return 0;
 }
 

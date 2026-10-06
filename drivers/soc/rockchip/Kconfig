@@ -30,4 +30,11 @@ config ROCKCHIP_DTPM
 	  on this platform. That will create all the power capping capable
 	  devices.
 
+config ROCKCHIP_RK3568_HEADLESS_PM
+	tristate "RK3568 headless BL31 sleep configuration"
+	depends on ARM64 && ARCH_ROCKCHIP && OF
+	help
+	  Local firmware ABI bridge. Configure sleep and GPIO wake sources
+	  while using mainline PSCI and device power management.
+
 endif

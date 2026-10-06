@@ -37,3 +37,16 @@ config ROCKCHIP_MPP_PROC_FS
 	bool "MPP diagnostics in procfs"
 	depends on ROCKCHIP_VENDOR_MPP && PROC_FS
 	default y
+
+config ROCKCHIP_MPP_IEP2
+	bool "RK3568 IEP2 headless video deinterlacing"
+	depends on ROCKCHIP_VENDOR_MPP
+	default y
+
+config ROCKCHIP_MPP_MAINLINE_DEVFREQ
+	bool "Mainline OPP, devfreq and thermal for MPP core clocks"
+	depends on ROCKCHIP_VENDOR_MPP && PM_DEVFREQ && PM_OPP && DEVFREQ_THERMAL
+	select DEVFREQ_GOV_PERFORMANCE
+	help
+	  Constrain SDK workload rates through standard QoS and OPP tables.
+	  Thermal cooling remains authoritative; no private BSP DVFS hooks.

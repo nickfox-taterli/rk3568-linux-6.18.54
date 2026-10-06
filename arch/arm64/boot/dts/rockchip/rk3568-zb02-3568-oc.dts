@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/* Experimental headless OPPs; baseline vendor DTB remains the default. */
+#include "rk3568-zb02-3568-vendor.dts"
+
+/ {
+	model = "ZB02-3568 on RP-RK3568-C-V11 (experimental OC)";
+};
+
+&cpu0_opp_table {
+	/* BL31 v1.46 returned 1992 MHz for 2208: retain as disabled record. */
+	opp-2208000000 {
+		status = "disabled";
+		opp-hz = /bits/ 64 <2208000000>;
+		opp-microvolt = <1200000>;
+		clock-latency-ns = <40000>;
+	};
+};
+
+&gpu_opp_table {
+	/* BL31 v1.46 returned 594 MHz for 900: unsupported on this board. */
+	opp-900000000 {
+		status = "disabled";
+		opp-hz = /bits/ 64 <900000000>;
+		opp-microvolt = <1050000>;
+	};
+};
+
+&zb02_npu_oc { status = "okay"; };

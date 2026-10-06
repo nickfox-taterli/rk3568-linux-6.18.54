@@ -1,0 +1,244 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/* ZB02_3568_V1.1 carrier with RP-RK3568-C-V11 core. */
+/dts-v1/;
+#include "rk3568-rp-core.dtsi"
+
+/ {
+	model = "ZB02-3568 (RP-RK3568-C-V11)";
+	compatible = "rpdzkj,zb02-3568", "rockchip,rk3568";
+
+	aliases {
+		ethernet0 = &gmac0;
+		mmc0 = &sdhci;
+		mmc1 = &sdmmc0;
+		serial2 = &uart2;
+	};
+
+	chosen {
+		stdout-path = "serial2:1500000n8";
+	};
+
+	dc_12v: regulator-dc-12v {
+		compatible = "regulator-fixed";
+		regulator-name = "dc_12v";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+	};
+
+	vcc3v3_sys: regulator-vcc3v3-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&dc_12v>;
+	};
+
+	vcc5v0_sys: regulator-vcc5v0-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&dc_12v>;
+	};
+
+	vcc3v3_pcie: regulator-vcc3v3-pcie {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_pcie";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpio3 RK_PA1 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <5000>;
+		vin-supply = <&dc_12v>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pcie_power_en>;
+	};
+
+	gmac0_clkin: external-gmac0-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <125000000>;
+		clock-output-names = "gmac0_clkin";
+	};
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2m0_xfer>;
+	status = "okay";
+};
+
+&rknpu_mmu {
+	/delete-property/ interrupt-names;
+};
+
+/* Multimedia engines are enabled by the vendor variant. */
+&vpu { status = "disabled"; };
+&vdpu_mmu { status = "disabled"; };
+&vepu { status = "disabled"; };
+&vepu_mmu { status = "disabled"; };
+&rga { status = "disabled"; };
+
+&gmac0 {
+	phy-mode = "rgmii";
+	clock_in_out = "input";
+	assigned-clocks = <&cru SCLK_GMAC0_RX_TX>, <&cru SCLK_GMAC0>,
+			  <&cru CLK_MAC0_OUT>;
+	assigned-clock-parents = <&cru SCLK_GMAC0_RGMII_SPEED>,
+				 <&gmac0_clkin>, <&cru CPLL_25M>;
+	assigned-clock-rates = <0>, <125000000>, <25000000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac0_miim &gmac0_tx_bus2 &gmac0_rx_bus2
+		     &gmac0_rgmii_clk &gmac0_rgmii_bus &gmac0_clkout
+		     &gmac0_clkinout>;
+	tx_delay = <0x2d>;
+	rx_delay = <0x2c>;
+	phy-handle = <&rgmii_phy0>;
+	status = "okay";
+};
+
+&mdio0 {
+	rgmii_phy0: ethernet-phy@0 {
+		/* The PHY needs its 25 MHz clock before responding to MDIO. */
+		compatible = "ethernet-phy-id001c.c916";
+		reg = <0>;
+		clocks = <&cru CLK_MAC0_OUT>;
+		reset-gpios = <&gpio2 RK_PD3 GPIO_ACTIVE_LOW>;
+		reset-assert-us = <20000>;
+		reset-deassert-us = <100000>;
+	};
+};
+
+/* No switch/DSA nodes: the carrier uses unmanaged switches. */
+&gpio4 {
+	ethernet-a1-hog {
+		gpio-hog;
+		gpios = <RK_PA1 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "ethernet-control-a1-hold";
+	};
+	ethernet-a2-hog {
+		gpio-hog;
+		gpios = <RK_PA2 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "ethernet-control-a2-hold";
+	};
+	ec200t-control-hog {
+		gpio-hog;
+		gpios = <RK_PA3 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "ec200t-control-hold";
+	};
+};
+
+/* Preserve observed/default physical levels, without guessing consumers. */
+&gpio2 {
+	usb-power-hog {
+		gpio-hog;
+		gpios = <RK_PD5 GPIO_ACTIVE_HIGH>, <RK_PD0 GPIO_ACTIVE_HIGH>,
+			<RK_PD1 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "usb-power-hold";
+	};
+	usb-hub-hog {
+		gpio-hog;
+		gpios = <RK_PD7 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "usb-hub-control-hold";
+	};
+	otg-mode-hog {
+		gpio-hog;
+		gpios = <RK_PD6 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "otg-mode-hold";
+	};
+};
+
+&gpio3 {
+	board-power-hog {
+		gpio-hog;
+		gpios = <RK_PB5 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "board-power-hold";
+	};
+	pcie-clock-hog {
+		gpio-hog;
+		gpios = <RK_PA7 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "pcie-clock-oe-hold";
+	};
+};
+
+&pinctrl {
+	ethernet {
+		gmac0_clkout: gmac0-clkout {
+			rockchip,pins = <2 RK_PC1 2 &pcfg_pull_none>;
+		};
+	};
+	pcie {
+		pcie_power_en: pcie-power-en {
+			rockchip,pins = <3 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		pcie_reset: pcie-reset {
+			rockchip,pins = <4 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+	sdmmc0 {
+		sdmmc0_cd: sdmmc0-cd {
+			rockchip,pins = <0 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+};
+
+&combphy0 { status = "okay"; };
+&combphy1 { status = "okay"; };
+&combphy2 { status = "okay"; };
+
+&usb2phy0 { status = "okay"; };
+&usb2phy0_host { status = "okay"; };
+&usb2phy0_otg { status = "okay"; };
+&usb2phy1 { status = "okay"; };
+&usb2phy1_host { status = "okay"; };
+&usb2phy1_otg { status = "okay"; };
+
+&usb_host0_xhci {
+	dr_mode = "otg";
+	extcon = <&usb2phy0>;
+	status = "okay";
+};
+&usb_host1_xhci { status = "okay"; };
+&usb_host0_ehci { status = "okay"; };
+&usb_host0_ohci { status = "okay"; };
+&usb_host1_ehci { status = "okay"; };
+&usb_host1_ohci { status = "okay"; };
+
+&pcie2x1 {
+	num-lanes = <1>;
+	max-link-speed = <2>;
+	/* This driver drives logical 0 while asserting PERST, 1 on release. */
+	reset-gpios = <&gpio4 RK_PC4 GPIO_ACTIVE_HIGH>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie_reset>;
+	status = "okay";
+};
+
+&sdmmc0 {
+	bus-width = <4>;
+	max-frequency = <50000000>;
+	cap-sd-highspeed;
+	disable-wp;
+	no-1-8-v;
+	cd-gpios = <&gpio0 RK_PA4 GPIO_ACTIVE_LOW>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc0_bus4 &sdmmc0_clk &sdmmc0_cmd &sdmmc0_cd>;
+	vmmc-supply = <&vcc3v3_sd>;
+	vqmmc-supply = <&vccio_sd>;
+	status = "okay";
+};

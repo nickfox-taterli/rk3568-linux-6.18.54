@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
+obj-$(CONFIG_ARM_RK3568_HEADLESS_DMC) += rk3568_dmc.o
 obj-$(CONFIG_PM_DEVFREQ)	+= devfreq.o
 obj-$(CONFIG_PM_DEVFREQ_EVENT)	+= devfreq-event.o
 obj-$(CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND)	+= governor_simpleondemand.o

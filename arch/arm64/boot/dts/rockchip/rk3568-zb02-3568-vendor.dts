@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+#include "rk3568-zb02-3568.dts"
+#include "rk3568-vendor-mpp.dtsi"
+
+&pd_npu { domain-supply = <&vdd_npu>; };
+
+&vdd_npu {
+	regulator-min-microvolt = <850000>;
+	regulator-max-microvolt = <1000000>;
+};
+
+&rknpu {
+	assigned-clocks = <&scmi_clk 2>;
+	assigned-clock-rates = <600000000>;
+	operating-points-v2 = <&zb02_npu_opp>;
+	nvmem-cells = <&zb02_npu_grade>, <&zb02_npu_remark>;
+	nvmem-cell-names = "npu-grade", "npu-grade-remark";
+	#cooling-cells = <2>;
+	rknpu-supply = <&vdd_npu>;
+	status = "okay";
+};
+
+&rknpu_mmu { status = "okay"; };
+
+/ {
+	dfi: dfi@fe230000 {
+		compatible = "rockchip,rk3568-dfi";
+		reg = <0x0 0xfe230000 0x0 0x400>;
+		rockchip,pmu = <&pmugrf>;
+	};
+	dmc: memory-controller {
+		compatible = "rockchip,rk3568-headless-dmc";
+		clocks = <&scmi_clk 3>;
+		clock-names = "dmc";
+		devfreq-events = <&dfi>;
+		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
+	};
+	/* OTP offsets match the RK3568 SDK specification/remark cells. */
+	OTP: otp@fe38c000 {
+		compatible = "rockchip,rk3568-otp";
+		reg = <0x0 0xfe38c000 0x0 0x4000>;
+		clocks = <&cru CLK_OTPC_NS_USR>, <&cru CLK_OTPC_NS_SBPI>,
+			 <&cru PCLK_OTPC_NS>, <&cru PCLK_OTPPHY>;
+		clock-names = "usr", "sbpi", "apb", "phy";
+		resets = <&cru SRST_OTPPHY>;
+		reset-names = "otp_phy";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		zb02_npu_grade: specification-serial-number@7 {
+			reg = <0x7 0x1>;
+			bits = <0 5>;
+		};
+		zb02_npu_remark: remark-spec-serial-number@56 {
+			reg = <0x56 0x1>;
+			bits = <0 5>;
+		};
+	};
+	/* SDK uncalibrated L0 voltages; no other board's PVTM bin copied. */
+	zb02_npu_opp: opp-table-npu {
+		compatible = "operating-points-v2";
+		opp-200000000 { opp-hz = /bits/ 64 <200000000>; opp-microvolt = <850000>; };
+		opp-400000000 { opp-hz = /bits/ 64 <400000000>; opp-microvolt = <850000>; };
+		opp-600000000 { opp-hz = /bits/ 64 <600000000>; opp-microvolt = <900000>; };
+		opp-800000000 { opp-hz = /bits/ 64 <800000000>; opp-microvolt = <950000>; };
+		opp-900000000 { opp-hz = /bits/ 64 <900000000>; opp-microvolt = <975000>; };
+		/* Experimental point; enabled only by the separate OC DTB. */
+		zb02_npu_oc: opp-1000000000 {
+			opp-hz = /bits/ 64 <1000000000>;
+			opp-microvolt = <1000000>;
+			status = "disabled";
+		};
+	};
+};
+
+&gpu {
+	mali-supply = <&vdd_gpu>;
+	status = "okay";
+};
+
+&cpu_thermal {
+	cooling-maps {
+		map-npu {
+			trip = <&cpu_alert0>;
+			cooling-device = <&rknpu THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+		};
+	};
+};
+
+/* Shared logic rail: never below the board's 925 mV minimum. */
+/ {
+	zb02_mpp_opp: opp-table-mpp {
+		compatible = "operating-points-v2";
+		opp-200000000 { opp-hz = /bits/ 64 <200000000>; opp-microvolt = <925000 925000 1350000>; };
+		opp-300000000 { opp-hz = /bits/ 64 <300000000>; opp-microvolt = <925000 925000 1350000>; };
+		opp-400000000 { opp-hz = /bits/ 64 <400000000>; opp-microvolt = <975000>; };
+	};
+};
+&rkvdec {
+	rockchip,normal-rates = <300000000 0 300000000 300000000 600000000>;
+	rockchip,advanced-rates = <400000000 0 400000000 400000000 600000000>;
+	operating-points-v2 = <&zb02_mpp_opp>;
+	mpp-supply = <&vdd_logic>;
+	#cooling-cells = <2>;
+};
+&rkvenc {
+	rockchip,normal-rates = <300000000 0 300000000>;
+	rockchip,advanced-rates = <400000000 0 400000000>;
+	operating-points-v2 = <&zb02_mpp_opp>;
+	mpp-supply = <&vdd_logic>;
+	#cooling-cells = <2>;
+};
+&cpu_thermal {
+	cooling-maps {
+		map-decoder {
+			trip = <&cpu_alert0>;
+			cooling-device = <&rkvdec THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+		};
+		map-encoder {
+			trip = <&cpu_alert0>;
+			cooling-device = <&rkvenc THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+		};
+	};
+};
+
+/ {
+	/* Sleep mask and GPIO0 IRQ wake match this board's live BSP DT. */
+	rockchip-suspend {
+		compatible = "rockchip,rk3568-headless-pm";
+		rockchip,sleep-mode-config = <0x5ec>;
+		rockchip,wakeup-config = <0x10>;
+		rockchip,sleep-debug-en = <1>;
+	};
+};

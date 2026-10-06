@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/media/rockchip,mpp-service.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Rockchip vendor MPP task queue service
+
+maintainers:
+  - Rockchip Linux <linux-rockchip@lists.infradead.org>
+
+description: |
+  Local binding for the vendor MPP compatibility driver in drivers/vendor/mpp.
+  Codec engines reference this shared task queue and reset group service.
+
+properties:
+  compatible:
+    const: rockchip,mpp-service
+
+  rockchip,taskqueue-count:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    minimum: 1
+    maximum: 16
+    description: Number of independently scheduled codec task queues.
+
+  rockchip,resetgroup-count:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    minimum: 1
+    maximum: 16
+    description: Number of codec reset groups.
+
+required:
+  - compatible
+  - rockchip,taskqueue-count
+  - rockchip,resetgroup-count
+
+additionalProperties: false

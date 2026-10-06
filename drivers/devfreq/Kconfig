@@ -29,6 +29,17 @@ menuconfig PM_DEVFREQ
 
 if PM_DEVFREQ
 
+config ARM_RK3568_HEADLESS_DMC
+	tristate "RK3568 headless DDR devfreq using BL31 firmware"
+	depends on ARM64 && ARCH_ROCKCHIP && ARM_SCMI_PROTOCOL
+	depends on PM_DEVFREQ_EVENT
+	select DEVFREQ_GOV_PERFORMANCE
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
+	help
+	  Local compatibility driver using standard devfreq and Rockchip DFI.
+	  Available DDR operating points are read from BL31's trained FSP list.
+	  This driver does not integrate BSP display or system-monitor policy.
+
 comment "DEVFREQ Governors"
 
 config DEVFREQ_GOV_SIMPLE_ONDEMAND

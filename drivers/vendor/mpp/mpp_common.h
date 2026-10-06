@@ -259,7 +259,10 @@ struct mpp_mem_region {
 };
 
 
+struct mpp_mainline_dvfs;
+
 struct mpp_dev {
+	struct mpp_mainline_dvfs *mainline_dvfs;
 	struct device *dev;
 	const struct mpp_dev_var *var;
 	struct mpp_hw_ops *hw_ops;

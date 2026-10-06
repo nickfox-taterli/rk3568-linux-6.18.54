@@ -35,6 +35,7 @@
 #include "mpp_debug.h"
 #include "mpp_common.h"
 #include "mpp_iommu.h"
+#include "mpp_devfreq.h"
 
 /* input parmater structure for version 1 */
 struct mpp_msg_v1 {
@@ -191,6 +192,7 @@ int mpp_power_on(struct mpp_dev *mpp)
 
 int mpp_power_off(struct mpp_dev *mpp)
 {
+	mpp_mainline_dvfs_rate(mpp, 200000000);
 	if (mpp->hw_ops->clk_off)
 		mpp->hw_ops->clk_off(mpp);
 
@@ -2165,6 +2167,10 @@ int mpp_dev_probe(struct mpp_dev *mpp,
 			goto failed;
 	}
 
+	ret = mpp_mainline_dvfs_init(mpp);
+	if (ret)
+		goto failed;
+
 	/* read hardware id */
 	if (hw_info->reg_id >= 0) {
 		pm_runtime_get_sync(dev);
@@ -2188,6 +2194,7 @@ failed:
 
 int mpp_dev_remove(struct mpp_dev *mpp)
 {
+	mpp_mainline_dvfs_remove(mpp);
 	if (mpp->hw_ops->exit)
 		mpp->hw_ops->exit(mpp);
 

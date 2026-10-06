@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/media/rockchip,vendor-mpp.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: RK3568 vendor MPP codec engines
+
+maintainers:
+  - Rockchip Linux <linux-rockchip@lists.infradead.org>
+
+description: |
+  Local binding for the SDK ioctl compatibility engines in drivers/vendor/mpp.
+  Each engine uses the shared MPP service for task scheduling and reset groups.
+
+properties:
+  compatible:
+    enum:
+      - rockchip,vpu-decoder-v2
+      - rockchip,vpu-encoder-v2
+      - rockchip,rkv-decoder-rk3568
+      - rockchip,rkv-jpeg-decoder-v1
+      - rockchip,rkv-encoder-v1
+      - rockchip,rk3568-iep
+
+  reg:
+    minItems: 1
+    maxItems: 2
+
+  reg-names:
+    items:
+      - const: regs
+      - const: link
+
+  interrupts:
+    maxItems: 1
+
+  interrupt-names:
+    maxItems: 1
+
+  clocks:
+    minItems: 2
+    maxItems: 5
+
+  clock-names:
+    minItems: 2
+    maxItems: 5
+
+  resets:
+    minItems: 2
+    maxItems: 7
+
+  reset-names:
+    minItems: 2
+    maxItems: 7
+
+  power-domains:
+    maxItems: 1
+
+  iommus:
+    maxItems: 1
+
+  rockchip,srv:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: Shared MPP task queue service.
+
+  rockchip,taskqueue-node:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 15
+    description: Index of the engine's task queue in the MPP service.
+
+  rockchip,resetgroup-node:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    maximum: 15
+    description: Index of the engine's reset group in the MPP service.
+
+  rockchip,task-capacity:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    minimum: 1
+    description: Maximum simultaneous queued tasks.
+
+  rockchip,normal-rates:
+    $ref: /schemas/types.yaml#/definitions/uint32-array
+    minItems: 2
+    maxItems: 5
+    description: Normal operating rates corresponding to the clock list.
+
+  rockchip,advanced-rates:
+    $ref: /schemas/types.yaml#/definitions/uint32-array
+    minItems: 2
+    maxItems: 5
+    description: Higher load operating rates corresponding to the clock list.
+
+  rockchip,default-max-load:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    description: Pixel load threshold for selecting higher operating rates.
+
+  rockchip,disable-auto-freq:
+    type: boolean
+    description: Keep the initial engine clock rates.
+
+  rockchip,disable-link-mode:
+    type: boolean
+    description: Use direct submission instead of the decoder hardware link queue.
+
+  operating-points-v2: true
+
+  mpp-supply:
+    description: Shared logic supply used for core OPP voltage votes.
+
+  '#cooling-cells':
+    const: 2
+
+  rockchip,sram:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: Decoder SRAM resource mapped through the DMA API.
+
+  rockchip,rcb-size:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    description: Total per-task RCB budget including coherent DDR fallback.
+
+  rockchip,rcb-min-width:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    description: Minimum decoded width for using SRAM RCBs.
+
+required:
+  - compatible
+  - reg
+  - interrupts
+  - clocks
+  - clock-names
+  - resets
+  - reset-names
+  - power-domains
+  - iommus
+  - rockchip,srv
+  - rockchip,taskqueue-node
+  - rockchip,resetgroup-node
+
+additionalProperties: false

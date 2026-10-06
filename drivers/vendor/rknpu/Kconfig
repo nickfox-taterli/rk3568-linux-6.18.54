@@ -18,11 +18,13 @@ config ROCKCHIP_RKNPU_DEBUG_FS
 	  Enable debugfs to debug RKNPU usage.
 
 config ROCKCHIP_RKNPU_OPP
-	bool "Mainline OPP control for RKNPU"
-	depends on PM_OPP && COMMON_CLK && REGULATOR
+	bool "Mainline OPP/devfreq control for RKNPU"
+	depends on PM_OPP && PM_DEVFREQ && COMMON_CLK && REGULATOR
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
 	help
-	  Use the NPU SCMI clock and rknpu regulator to switch between the
-	  board's operating points through the RKNPU debugfs freq control.
+	  Use mainline OPP, devfreq load control and thermal cooling with the
+	  NPU SCMI clock and rknpu regulator. Debugfs freq adds manual QoS limits;
+	  writing zero releases them. Thermal maximum limits remain effective.
 
 config ROCKCHIP_RKNPU_PROC_FS
 	bool "RKNPU procfs"

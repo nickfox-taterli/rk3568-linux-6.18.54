@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/memory-controllers/rockchip,rk3568-headless-dmc.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Local RK3568 headless BL31 DDR scaling controller
+
+maintainers:
+  - Rockchip Linux <linux-rockchip@lists.infradead.org>
+
+description: |
+  Local compatibility driver using mainline devfreq and DFI events with the
+  RK3568 BL31 DDR mailbox ABI. OPP rates are discovered from trained firmware
+  FSPs. The firmware shared pages must be outside allocatable System RAM.
+
+properties:
+  compatible:
+    const: rockchip,rk3568-headless-dmc
+
+  clocks:
+    maxItems: 1
+
+  clock-names:
+    const: dmc
+
+  devfreq-events:
+    $ref: /schemas/types.yaml#/definitions/phandle-array
+    maxItems: 1
+    description: Rockchip DFI bandwidth event counter.
+
+  interrupts:
+    maxItems: 1
+    description: DDR MCU completion interrupt.
+
+required:
+  - compatible
+  - clocks
+  - clock-names
+  - devfreq-events
+  - interrupts
+
+additionalProperties: false

@@ -23,6 +23,7 @@
 #include <linux/err.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/phy/phy.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
 #include <linux/usb/ohci_pdriver.h>
@@ -37,6 +38,8 @@
 #define hcd_to_ohci_priv(h) ((struct ohci_platform_priv *)hcd_to_ohci(h)->priv)
 
 struct ohci_platform_priv {
+	/* Keep RK3568 UTMI clock alive until controller MMIO is quiesced. */
+	struct phy *register_phy;
 	struct clk *clks[OHCI_MAX_CLKS];
 	struct reset_control *resets;
 };
@@ -53,6 +56,14 @@ static int ohci_platform_power_on(struct platform_device *dev)
 			goto err_disable_clks;
 	}
 
+	ret = phy_init(priv->register_phy);
+	if (ret)
+		goto err_disable_clks;
+	ret = phy_power_on(priv->register_phy);
+	if (ret) {
+		phy_exit(priv->register_phy);
+		goto err_disable_clks;
+	}
 	return 0;
 
 err_disable_clks:
@@ -68,6 +79,8 @@ static void ohci_platform_power_off(struct platform_device *dev)
 	struct ohci_platform_priv *priv = hcd_to_ohci_priv(hcd);
 	int clk;
 
+	phy_power_off(priv->register_phy);
+	phy_exit(priv->register_phy);
 	for (clk = OHCI_MAX_CLKS - 1; clk >= 0; clk--)
 		if (priv->clks[clk])
 			clk_disable_unprepare(priv->clks[clk]);
@@ -191,6 +204,21 @@ static int ohci_platform_probe(struct platform_device *dev)
 		goto err_reset;
 	}
 #endif
+
+	/*
+	 * USB core releases root-hub PHY references before platform suspend.
+	 * RK3568 companion registers still need UTMI for their final accesses.
+	 * Each controller holds its own reference through power_on/power_off;
+	 * the shared PHY shuts down after both controllers have stopped MMIO.
+	 */
+	if (pdata == &ohci_platform_defaults &&
+	    of_machine_is_compatible("rockchip,rk3568")) {
+		priv->register_phy = devm_phy_get(&dev->dev, "usb");
+		if (IS_ERR(priv->register_phy)) {
+			err = PTR_ERR(priv->register_phy);
+			goto err_reset;
+		}
+	}
 
 	pm_runtime_set_active(&dev->dev);
 	pm_runtime_enable(&dev->dev);

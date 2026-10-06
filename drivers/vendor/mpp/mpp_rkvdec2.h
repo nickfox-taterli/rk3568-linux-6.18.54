@@ -203,7 +203,8 @@ struct rkvdec2_dev {
 	u32 sram_size;
 	u32 rcb_size;
 	dma_addr_t rcb_iova;
-	struct page *rcb_page;
+	void *rcb_cpu;
+	dma_addr_t rcb_ddr_iova;
 	u32 rcb_min_width;
 	u32 rcb_info_count;
 	u32 rcb_infos[RKVDEC_MAX_RCB_NUM * 2];

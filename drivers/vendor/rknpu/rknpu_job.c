@@ -505,6 +505,11 @@ static void rknpu_job_done(struct rknpu_job *job, int ret, int core_index)
 	now = ktime_get();
 	job->hw_elapse_time = ktime_sub(now, job->hw_commit_time);
 	subcore_data->timer.busy_time += ktime_sub(now, job->hw_recoder_time);
+#ifdef CONFIG_ROCKCHIP_RKNPU_OPP
+	if (core_index == 0)
+		atomic64_add(ktime_to_ns(ktime_sub(now, job->hw_recoder_time)),
+			     &rknpu_dev->dvfs_busy_ns);
+#endif
 	spin_unlock_irqrestore(&rknpu_dev->irq_lock, flags);
 
 	if (atomic_dec_and_test(&job->interrupt_count)) {

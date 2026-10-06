@@ -42,6 +42,7 @@
 #include "mpp_debug.h"
 #include "mpp_iommu.h"
 #include "mpp_common.h"
+#include "mpp_devfreq.h"
 
 #define RKVENC_DRIVER_NAME			"mpp_rkvenc"
 
@@ -1274,7 +1275,10 @@ static int rkvenc_reset(struct mpp_dev *mpp)
 		mutex_lock(&enc->devfreq->lock);
 #endif
 	mpp_clk_set_rate(&enc->aclk_info, CLK_MODE_REDUCE);
-	mpp_clk_set_rate(&enc->core_clk_info, CLK_MODE_REDUCE);
+	if (mpp->mainline_dvfs)
+		mpp_mainline_dvfs_rate(mpp, 200000000);
+	else
+		mpp_clk_set_rate(&enc->core_clk_info, CLK_MODE_REDUCE);
 	/* safe reset */
 	mpp_write(mpp, RKVENC_INT_MSK_BASE, 0x1FF);
 	mpp_write(mpp, RKVENC_CLR_BASE, RKVENC_SAFE_CLR_BIT);
@@ -1390,7 +1394,10 @@ static int rkvenc_set_freq(struct mpp_dev *mpp,
 		return 0;
 	}
 #endif
-	mpp_clk_set_rate(&enc->core_clk_info, task->clk_mode);
+	if (!mpp->mainline_dvfs)
+		mpp_clk_set_rate(&enc->core_clk_info, task->clk_mode);
+	else
+		mpp_mainline_dvfs_rate(mpp, mpp_get_clk_info_rate_hz(&enc->core_clk_info, task->clk_mode));
 
 	return 0;
 }

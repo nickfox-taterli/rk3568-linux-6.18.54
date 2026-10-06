@@ -21,14 +21,8 @@ int rknpu_devfreq_set_rate(struct rknpu_device *rknpu_dev,
 			  unsigned long freq);
 static inline void rknpu_devfreq_lock(struct rknpu_device *rknpu_dev) {}
 static inline void rknpu_devfreq_unlock(struct rknpu_device *rknpu_dev) {}
-static inline int rknpu_devfreq_runtime_suspend(struct device *dev)
-{
-	return 0;
-}
-static inline int rknpu_devfreq_runtime_resume(struct device *dev)
-{
-	return 0;
-}
+int rknpu_devfreq_runtime_suspend(struct device *dev);
+int rknpu_devfreq_runtime_resume(struct device *dev);
 #else
 static inline int rknpu_devfreq_init(struct rknpu_device *rknpu_dev)
 {

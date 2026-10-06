@@ -16,6 +16,8 @@
 #include <linux/version.h>
 #include <linux/hrtimer.h>
 #include <linux/miscdevice.h>
+#include <linux/devfreq.h>
+#include <linux/pm_qos.h>
 
 #ifdef CONFIG_ROCKCHIP_RKNPU_DEVFREQ
 #include <soc/rockchip/rockchip_opp_select.h>
@@ -139,6 +141,12 @@ struct rknpu_device {
 #ifdef CONFIG_ROCKCHIP_RKNPU_OPP
 	int opp_config_token;
 	bool opp_table_ready;
+	struct devfreq *mainline_devfreq;
+	struct devfreq_dev_profile mainline_profile;
+	struct thermal_cooling_device *mainline_cooling;
+	struct dev_pm_qos_request manual_min, manual_max;
+	atomic64_t dvfs_busy_ns;
+	u64 dvfs_last_busy, dvfs_last_time;
 #endif
 	int bypass_irq_handler;
 	int bypass_soft_reset;
